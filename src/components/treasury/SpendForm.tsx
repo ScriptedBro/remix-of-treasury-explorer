@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,16 +6,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { AlertCircle, Send, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { parseUnits } from "viem";
-import { useReadContract } from "wagmi";
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient, useAccount } from "wagmi";
 import { POLICY_TREASURY_ABI } from "@/lib/contracts/abis";
+import { useRecordTransaction, useTreasuryByAddress } from "@/hooks/useTreasuryDB";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 interface SpendFormProps {
   treasuryAddress: `0x${string}`;
   remainingAllowance: string;
   periodSeconds?: number;
   tokenDecimals?: number;
-  onSpend: (to: `0x${string}`, amount: bigint) => void;
-  isPending: boolean;
+  onSpendSuccess?: () => void;
 }
 
 export function SpendForm({ 
@@ -23,12 +25,17 @@ export function SpendForm({
   remainingAllowance,
   periodSeconds = 0,
   tokenDecimals = 18,
-  onSpend, 
-  isPending 
+  onSpendSuccess,
 }: SpendFormProps) {
+  const { address: userAddress } = useAccount();
+  const publicClient = usePublicClient();
+  const queryClient = useQueryClient();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const { data: treasuryDB } = useTreasuryByAddress(treasuryAddress);
+  const recordTransaction = useRecordTransaction();
 
   // Check if recipient is whitelisted
   const { data: isWhitelisted, isLoading: isCheckingWhitelist } = useReadContract({
@@ -40,6 +47,56 @@ export function SpendForm({
       enabled: recipient.length === 42 && recipient.startsWith("0x"),
     },
   });
+
+  const {
+    writeContract,
+    data: spendHash,
+    isPending: isWritePending,
+    reset: resetWrite,
+  } = useWriteContract();
+
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    hash: spendHash,
+  });
+
+  // Handle successful spend
+  useEffect(() => {
+    const recordSpendTransaction = async () => {
+      if (!isConfirmed || !spendHash || !treasuryDB || !userAddress || !publicClient) return;
+
+      try {
+        const receipt = await publicClient.getTransactionReceipt({ hash: spendHash });
+        const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
+
+        await recordTransaction.mutateAsync({
+          treasury_id: treasuryDB.id,
+          tx_hash: spendHash,
+          event_type: "spend",
+          from_address: treasuryAddress,
+          to_address: recipient,
+          amount: parseUnits(amount, tokenDecimals).toString(),
+          block_number: Number(receipt.blockNumber),
+          block_timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
+        });
+
+        queryClient.invalidateQueries({ queryKey: ["treasury-batch-data"] });
+
+        toast.success(`Successfully sent ${amount} MNEE!`);
+      } catch (err) {
+        console.error("Failed to record spend transaction:", err);
+        toast.success(`Successfully sent ${amount} MNEE!`);
+      }
+
+      setAmount("");
+      setRecipient("");
+      resetWrite();
+      onSpendSuccess?.();
+    };
+
+    recordSpendTransaction();
+  }, [isConfirmed, spendHash, treasuryDB, userAddress, amount, recipient, publicClient, treasuryAddress, recordTransaction, queryClient, resetWrite, onSpendSuccess, tokenDecimals]);
+
+  const isPending = isWritePending || isConfirming;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,13 +131,16 @@ export function SpendForm({
         setError("Recipient is not whitelisted");
         return;
       }
-      // If isWhitelisted is undefined and we're not loading, the query might not have run
-      // In this case, we'll allow the transaction to proceed (the contract will reject if not whitelisted)
     }
 
     try {
       const amountBigInt = parseUnits(amount, tokenDecimals);
-      onSpend(recipient as `0x${string}`, amountBigInt);
+      writeContract({
+        address: treasuryAddress,
+        abi: POLICY_TREASURY_ABI,
+        functionName: "spend",
+        args: [recipient as `0x${string}`, amountBigInt],
+      } as any);
     } catch (err) {
       setError("Invalid amount format");
     }
@@ -157,7 +217,7 @@ export function SpendForm({
             {isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
+                {isConfirming ? "Confirming..." : "Processing..."}
               </>
             ) : (
               <>

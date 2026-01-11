@@ -270,8 +270,10 @@ export default function TreasuryDetail() {
                   treasuryAddress={treasuryAddress as `0x${string}`}
                   remainingAllowance={remainingAllowance}
                   periodSeconds={periodSeconds}
-                  onSpend={spend}
-                  isPending={isSpendPending}
+                  onSpendSuccess={() => {
+                    refetchBalance();
+                    refetchTransactions();
+                  }}
                 />
               ) : (
                 <Card>

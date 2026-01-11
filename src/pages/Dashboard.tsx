@@ -3,7 +3,7 @@ import { useAccount, useChainId } from "wagmi";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { Layout } from "@/components/layout/Layout";
 import { TreasuryCard } from "@/components/treasury/TreasuryCard";
-import { useTreasuries, useTreasuryTransactions } from "@/hooks/useTreasuryDB";
+import { useTreasuries, useAllTransactions } from "@/hooks/useTreasuryDB";
 import { useTreasuryBatchData } from "@/hooks/useTreasuryBatchData";
 import { useReconcileTreasuries } from "@/hooks/useReconcileTreasuries";
 import { getTreasuryStatus, type TreasuryStatus } from "@/lib/treasury-status";
@@ -134,7 +134,7 @@ export default function Dashboard() {
   const lastReconciledKeyRef = useRef<string | null>(null);
   const { data: treasuries, isLoading } = useTreasuries(address);
   const { data: batchData, isLoading: isBatchLoading } = useTreasuryBatchData(treasuries);
-  const { data: allTransactions } = useTreasuryTransactions();
+  const { data: allTransactions } = useAllTransactions(address);
   
   const [statusFilter, setStatusFilter] = useState<string>('all');
 

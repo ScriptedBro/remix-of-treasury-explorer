@@ -102,6 +102,9 @@ export function FundTreasuryForm({
           block_number: Number(receipt.blockNumber),
           block_timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
         });
+
+        // Invalidate batch data queries to update TVL and status
+        queryClient.invalidateQueries({ queryKey: ["treasury-batch-data"] });
         
         // Invalidate related queries to refresh UI
         queryClient.invalidateQueries({ queryKey: ["treasury-has-transactions", treasuryDB.id] });
