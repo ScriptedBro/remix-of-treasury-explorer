@@ -262,6 +262,8 @@ export function useRecordTransaction() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["treasury-transactions", variables.treasury_id] });
       queryClient.invalidateQueries({ queryKey: ["all-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["treasury-has-transactions", variables.treasury_id] });
+      queryClient.invalidateQueries({ queryKey: ["treasury-has-migration", variables.treasury_id] });
     },
   });
 }
