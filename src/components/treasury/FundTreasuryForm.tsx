@@ -1,15 +1,17 @@
 import { useState, useEffect } from "react";
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Wallet, AlertCircle, CheckCircle2, Loader2, Info } from "lucide-react";
+import { Wallet, AlertCircle, Loader2, Info } from "lucide-react";
 import { toast } from "sonner";
 import { MNEE_TOKEN_ADDRESS } from "@/lib/contracts/config";
 import { TreasuryStatus } from "@/lib/treasury-status";
+import { useRecordTransaction, useTreasuryByAddress } from "@/hooks/useTreasuryDB";
+import { useQueryClient } from "@tanstack/react-query";
 
 const ERC20_ABI = [
   {
@@ -47,8 +49,13 @@ export function FundTreasuryForm({
   onFundingComplete 
 }: FundTreasuryFormProps) {
   const { address: userAddress } = useAccount();
+  const publicClient = usePublicClient();
+  const queryClient = useQueryClient();
   const [amount, setAmount] = useState("");
-  
+
+  // Get treasury record from DB for recording transactions
+  const { data: treasuryDB } = useTreasuryByAddress(treasuryAddress);
+  const recordTransaction = useRecordTransaction();
   // Get user's MNEE balance
   const { data: userBalance, refetch: refetchBalance } = useReadContract({
     address: MNEE_TOKEN_ADDRESS,
@@ -76,14 +83,44 @@ export function FundTreasuryForm({
 
   // Handle successful funding
   useEffect(() => {
-    if (isConfirmed) {
-      toast.success(`Successfully funded treasury with ${amount} MNEE!`);
+    const recordFundingTransaction = async () => {
+      if (!isConfirmed || !transferHash || !treasuryDB || !userAddress || !publicClient) return;
+      
+      try {
+        // Get transaction receipt for block info
+        const receipt = await publicClient.getTransactionReceipt({ hash: transferHash });
+        const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
+        
+        // Record the deposit transaction in the database
+        await recordTransaction.mutateAsync({
+          treasury_id: treasuryDB.id,
+          tx_hash: transferHash,
+          event_type: "deposit",
+          from_address: userAddress,
+          to_address: treasuryAddress,
+          amount: parseUnits(amount, 18).toString(),
+          block_number: Number(receipt.blockNumber),
+          block_timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
+        });
+        
+        // Invalidate related queries to refresh UI
+        queryClient.invalidateQueries({ queryKey: ["treasury-has-transactions", treasuryDB.id] });
+        queryClient.invalidateQueries({ queryKey: ["all-transactions"] });
+        
+        toast.success(`Successfully funded treasury with ${amount} MNEE!`);
+      } catch (err) {
+        console.error("Failed to record funding transaction:", err);
+        toast.success(`Successfully funded treasury with ${amount} MNEE!`);
+      }
+      
       setAmount("");
       refetchBalance();
       resetTransfer();
       onFundingComplete?.();
-    }
-  }, [isConfirmed, amount, refetchBalance, resetTransfer, onFundingComplete]);
+    };
+    
+    recordFundingTransaction();
+  }, [isConfirmed, transferHash, treasuryDB, userAddress, amount, refetchBalance, resetTransfer, onFundingComplete, publicClient, treasuryAddress, recordTransaction, queryClient]);
 
   const formattedUserBalance = userBalance 
     ? formatUnits(userBalance, 18) 
