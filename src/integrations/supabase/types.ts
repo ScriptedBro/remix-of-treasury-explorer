@@ -74,6 +74,7 @@ export type Database = {
           event_type: string
           from_address: string
           id: string
+          log_index: number | null
           period_index: number | null
           to_address: string
           treasury_id: string
@@ -87,6 +88,7 @@ export type Database = {
           event_type: string
           from_address: string
           id?: string
+          log_index?: number | null
           period_index?: number | null
           to_address: string
           treasury_id: string
@@ -100,6 +102,7 @@ export type Database = {
           event_type?: string
           from_address?: string
           id?: string
+          log_index?: number | null
           period_index?: number | null
           to_address?: string
           treasury_id?: string
