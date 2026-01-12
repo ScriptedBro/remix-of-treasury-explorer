@@ -6,12 +6,13 @@ export interface TreasuryStatusData {
   hasTransactions: boolean;
   hasMigration: boolean;
   migrationTarget?: string;
+  now?: number;
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 export function getTreasuryStatus(data: TreasuryStatusData): TreasuryStatus {
-  const now = Math.floor(Date.now() / 1000);
+  const now = Number.isFinite(data.now) ? (data.now as number) : Math.floor(Date.now() / 1000);
   
   // Check if migrated (migration target is set to non-zero and has been executed)
   if (data.hasMigration) {

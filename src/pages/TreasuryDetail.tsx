@@ -269,6 +269,7 @@ export default function TreasuryDetail() {
                 <SpendForm
                   treasuryAddress={treasuryAddress as `0x${string}`}
                   remainingAllowance={remainingAllowance}
+                  treasuryBalance={balance}
                   periodSeconds={periodSeconds}
                   onSpendSuccess={() => {
                     refetchBalance();

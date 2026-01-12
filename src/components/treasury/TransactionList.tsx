@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArrowUpRight, ArrowRightLeft, ArrowDownRight, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import type { TreasuryTransaction } from "@/hooks/useTreasuryDB";
+import { formatUnits } from "viem";
 
 interface TransactionListProps {
   transactions: TreasuryTransaction[];
@@ -14,13 +15,23 @@ const eventIcons = {
   spend: ArrowUpRight,
   migration: ArrowRightLeft,
   fund: ArrowDownRight,
+  withdraw: ArrowDownRight,
 };
 
 const eventColors = {
   spend: "text-orange-500",
   migration: "text-amber-500",
   fund: "text-green-500",
+  withdraw: "text-red-500",
 };
+
+function formatMneeAmount(amount: unknown) {
+  try {
+    return formatUnits(BigInt(String(amount || "0")), 18);
+  } catch {
+    return "0";
+  }
+}
 
 export function TransactionList({ transactions, isLoading }: TransactionListProps) {
   if (isLoading) {
@@ -76,7 +87,7 @@ export function TransactionList({ transactions, isLoading }: TransactionListProp
                             {eventType}
                           </Badge>
                           <span className="text-sm font-medium">
-                            {parseFloat(tx.amount).toLocaleString()} MNEE
+                            {parseFloat(formatMneeAmount(tx.amount)).toLocaleString()} MNEE
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">

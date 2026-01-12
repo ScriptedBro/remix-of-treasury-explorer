@@ -260,6 +260,7 @@ export default function Deploy() {
   // Handle funding the treasury
   const handleFundTreasury = () => {
     if (!deployedAddress || !formData.initialFunding) return;
+    if (!address) return;
     
     setFundingStatus("transferring");
     setFundingError(null);
@@ -271,7 +272,8 @@ export default function Deploy() {
       abi: ERC20_ABI,
       functionName: "transfer",
       args: [deployedAddress, amount],
-    } as any);
+      account: address,
+    });
   };
 
   // Skip funding

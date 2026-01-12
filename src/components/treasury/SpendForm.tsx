@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import { toast } from "sonner";
 interface SpendFormProps {
   treasuryAddress: `0x${string}`;
   remainingAllowance: string;
+  treasuryBalance: string;
   periodSeconds?: number;
   tokenDecimals?: number;
   onSpendSuccess?: () => void;
@@ -23,6 +24,7 @@ interface SpendFormProps {
 export function SpendForm({ 
   treasuryAddress, 
   remainingAllowance,
+  treasuryBalance,
   periodSeconds = 0,
   tokenDecimals = 18,
   onSpendSuccess,
@@ -33,6 +35,25 @@ export function SpendForm({
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const amountValidationError = useMemo(() => {
+    if (!amount) return null;
+    const amountNum = parseFloat(amount);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) return "Please enter a valid amount greater than 0";
+
+    const balanceNum = parseFloat(treasuryBalance);
+    if (Number.isFinite(balanceNum) && amountNum > balanceNum) {
+      return "Insufficient balance in treasury";
+    }
+
+    const allowanceNum = parseFloat(remainingAllowance);
+    if (Number.isFinite(allowanceNum) && amountNum > allowanceNum) {
+      const limitType = periodSeconds === 0 ? "per-call limit" : "period allowance";
+      return `Amount exceeds remaining ${limitType} (${remainingAllowance})`;
+    }
+
+    return null;
+  }, [amount, periodSeconds, remainingAllowance, treasuryBalance]);
 
   const { data: treasuryDB } = useTreasuryByAddress(treasuryAddress);
   const recordTransaction = useRecordTransaction();
@@ -97,6 +118,7 @@ export function SpendForm({
   }, [isConfirmed, spendHash, treasuryDB, userAddress, amount, recipient, publicClient, treasuryAddress, recordTransaction, queryClient, resetWrite, onSpendSuccess, tokenDecimals]);
 
   const isPending = isWritePending || isConfirming;
+  const isSubmitDisabled = isPending || isCheckingWhitelist || Boolean(amountValidationError);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,16 +130,8 @@ export function SpendForm({
       return;
     }
 
-    // Validate amount
-    const amountNum = parseFloat(amount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      setError("Please enter a valid amount greater than 0");
-      return;
-    }
-
-    if (amountNum > parseFloat(remainingAllowance)) {
-      const limitType = periodSeconds === 0 ? "per-call limit" : "period allowance";
-      setError(`Amount exceeds remaining ${limitType} (${remainingAllowance})`);
+    if (amountValidationError) {
+      setError(amountValidationError);
       return;
     }
 
@@ -159,6 +173,13 @@ export function SpendForm({
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="rounded-lg bg-muted p-3">
+            <p className="text-xs text-muted-foreground">Treasury Balance</p>
+            <p className="text-sm font-medium">
+              {parseFloat(treasuryBalance).toLocaleString(undefined, { maximumFractionDigits: 6 })} MNEE
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="recipient">Recipient Address</Label>
             <Input
@@ -194,7 +215,10 @@ export function SpendForm({
                 step="any"
                 placeholder="0.00"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  setAmount(e.target.value);
+                  setError(null);
+                }}
                 className="pr-16"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
@@ -204,6 +228,10 @@ export function SpendForm({
             <p className="text-xs text-muted-foreground">
               {periodSeconds === 0 ? "Per-call limit" : "Remaining allowance"}: {parseFloat(remainingAllowance).toLocaleString()} MNEE
             </p>
+
+            {amountValidationError && (
+              <p className="text-sm text-destructive">{amountValidationError}</p>
+            )}
           </div>
 
           {error && (
@@ -213,7 +241,7 @@ export function SpendForm({
             </Alert>
           )}
 
-          <Button type="submit" className="w-full" disabled={isPending || isCheckingWhitelist}>
+          <Button type="submit" className="w-full" disabled={isSubmitDisabled}>
             {isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

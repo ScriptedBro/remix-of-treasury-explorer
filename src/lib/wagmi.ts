@@ -4,7 +4,7 @@ import { injected, metaMask, coinbaseWallet, safe } from "wagmi/connectors";
 
 // Define the forked mainnet chain
 export const forkedMainnet = defineChain({
-  id: 1,
+  id: 31337,
   name: "Forked Mainnet",
   nativeCurrency: {
     decimals: 18,

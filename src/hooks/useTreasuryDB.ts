@@ -192,21 +192,36 @@ export function useCreateTreasury() {
   
   return useMutation({
     mutationFn: async (treasury: TreasuryInsert) => {
+      const payload = {
+        ...treasury,
+        address: treasury.address.toLowerCase(),
+        owner_address: treasury.owner_address.toLowerCase(),
+        token_address: treasury.token_address.toLowerCase(),
+        migration_target: treasury.migration_target.toLowerCase(),
+        chain_id: chainId,
+      };
+
       const { data, error } = await supabase
         .from("treasuries")
-        .insert({
-          ...treasury,
-          address: treasury.address.toLowerCase(),
-          owner_address: treasury.owner_address.toLowerCase(),
-          token_address: treasury.token_address.toLowerCase(),
-          migration_target: treasury.migration_target.toLowerCase(),
-          chain_id: chainId,
+        .upsert(payload, {
+          onConflict: "address",
+          ignoreDuplicates: true,
         })
         .select()
-        .single();
-      
-      if (error) throw error;
-      return data;
+        .maybeSingle();
+
+      if (error && (error as any).code !== "23505") throw error;
+      if (data) return data;
+
+      const { data: existing, error: existingError } = await supabase
+        .from("treasuries")
+        .select("*")
+        .eq("address", payload.address)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+      if (!existing) throw new Error("Failed to create or load treasury record from database");
+      return existing;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["treasuries"] });

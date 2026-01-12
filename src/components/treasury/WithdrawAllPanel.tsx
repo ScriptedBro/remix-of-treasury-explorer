@@ -95,34 +95,36 @@ export function WithdrawAllPanel({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Withdraw All Funds</AlertDialogTitle>
-              <AlertDialogDescription className="space-y-4">
-                <p>
-                  This will transfer <strong>{parseFloat(balance).toLocaleString()} MNEE</strong> to the address you specify.
-                </p>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="withdraw-recipient">Recipient Address</Label>
-                  <Input
-                    id="withdraw-recipient"
-                    placeholder="0x..."
-                    value={recipient}
-                    onChange={(e) => {
-                      setRecipient(e.target.value);
-                      setError(null);
-                    }}
-                    className="font-mono"
-                  />
-                  {error && (
-                    <p className="text-sm text-destructive">{error}</p>
-                  )}
-                </div>
+              <AlertDialogDescription asChild>
+                <div className="space-y-4">
+                  <div>
+                    This will transfer <strong>{parseFloat(balance).toLocaleString()} MNEE</strong> to the address you specify.
+                  </div>
 
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    This action cannot be undone. Make sure the recipient address is correct.
-                  </AlertDescription>
-                </Alert>
+                  <div className="space-y-2">
+                    <Label htmlFor="withdraw-recipient">Recipient Address</Label>
+                    <Input
+                      id="withdraw-recipient"
+                      placeholder="0x..."
+                      value={recipient}
+                      onChange={(e) => {
+                        setRecipient(e.target.value);
+                        setError(null);
+                      }}
+                      className="font-mono"
+                    />
+                    {error && (
+                      <div className="text-sm text-destructive">{error}</div>
+                    )}
+                  </div>
+
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      This action cannot be undone. Make sure the recipient address is correct.
+                    </AlertDescription>
+                  </Alert>
+                </div>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

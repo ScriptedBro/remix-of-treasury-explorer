@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, useChainId } from "wagmi";
+import { usePublicClient } from "wagmi";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { Layout } from "@/components/layout/Layout";
 import { TreasuryCard } from "@/components/treasury/TreasuryCard";
@@ -130,6 +131,8 @@ function ConnectWalletPrompt() {
 export default function Dashboard() {
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
+  const publicClient = usePublicClient();
+  const [chainNow, setChainNow] = useState<number | null>(null);
   const reconcileTreasuries = useReconcileTreasuries();
   const lastReconciledKeyRef = useRef<string | null>(null);
   const { data: treasuries, isLoading } = useTreasuries(address);
@@ -148,6 +151,28 @@ export default function Dashboard() {
 
     reconcileTreasuries.mutate({ ownerAddress: address, chainId });
   }, [address, chainId, isConnected, reconcileTreasuries]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchChainTime = async () => {
+      if (!publicClient) return;
+      try {
+        const block = await publicClient.getBlock();
+        if (cancelled) return;
+        setChainNow(Number(block.timestamp));
+      } catch {
+        // ignore; fallback to local time inside getTreasuryStatus
+      }
+    };
+
+    fetchChainTime();
+    const id = setInterval(fetchChainTime, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [publicClient]);
 
   // Calculate status for each treasury and aggregate stats
   const { treasuriesWithStatus, statusCounts, totalBalance, activeCount } = useMemo(() => {
@@ -199,6 +224,7 @@ export default function Dashboard() {
         expiryTimestamp: treasury.expiry_timestamp || 0,
         hasTransactions: txInfo.hasTransactions,
         hasMigration: txInfo.hasMigration,
+        now: chainNow ?? undefined,
       });
 
       counts.all++;
@@ -223,7 +249,7 @@ export default function Dashboard() {
       totalBalance: totalBalanceNum.toString(),
       activeCount: activeNum,
     };
-  }, [treasuries, batchData, allTransactions]);
+  }, [treasuries, batchData, allTransactions, chainNow]);
 
   // Filter treasuries by status
   const filteredTreasuries = useMemo(() => {

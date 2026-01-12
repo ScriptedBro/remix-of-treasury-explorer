@@ -18,12 +18,37 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    console.log("[reconcile-treasuries] request", { method: req.method });
+
+    const projectUrl = Deno.env.get("PROJECT_URL");
+    const serviceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
+
+    if (!projectUrl || !serviceRoleKey) {
+      console.error("[reconcile-treasuries] missing env", {
+        hasProjectUrl: Boolean(projectUrl),
+        hasServiceRoleKey: Boolean(serviceRoleKey),
+      });
+      return new Response(
+        JSON.stringify({
+          error: "Missing required environment variables",
+          details: {
+            hasProjectUrl: Boolean(projectUrl),
+            hasServiceRoleKey: Boolean(serviceRoleKey),
+          },
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabase = createClient(projectUrl, serviceRoleKey);
 
     const { ownerAddress, chainId, staleTreasuryIds }: ReconcileRequest = await req.json();
+
+    console.log("[reconcile-treasuries] payload", {
+      ownerAddress,
+      chainId,
+      staleTreasuryIdsCount: Array.isArray(staleTreasuryIds) ? staleTreasuryIds.length : null,
+    });
 
     if (!ownerAddress || !/^0x[a-fA-F0-9]{40}$/.test(ownerAddress)) {
       return new Response(JSON.stringify({ error: "Invalid ownerAddress" }), {
@@ -104,6 +129,7 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e) {
+    console.error("[reconcile-treasuries] unexpected error", e);
     return new Response(
       JSON.stringify({ error: "Unexpected error", details: String(e) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

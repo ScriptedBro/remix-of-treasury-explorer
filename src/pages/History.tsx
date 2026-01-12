@@ -22,18 +22,30 @@ import { format } from "date-fns";
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { formatUnits } from "viem";
 
 const eventIcons = {
   spend: ArrowUpRight,
   migration: ArrowRightLeft,
   fund: ArrowDownRight,
+  withdraw: ArrowDownRight,
 };
 
 const eventColors = {
   spend: "text-orange-500 bg-orange-500/10",
   migration: "text-amber-500 bg-amber-500/10",
   fund: "text-green-500 bg-green-500/10",
+  withdraw: "text-red-500 bg-red-500/10",
 };
+
+function formatMneeAmount(amount: unknown) {
+  try {
+    // amounts are stored as wei (string/numeric) in the DB
+    return formatUnits(BigInt(String(amount || "0")), 18);
+  } catch {
+    return "0";
+  }
+}
 
 export default function History() {
   const { address, isConnected } = useAccount();
@@ -65,7 +77,7 @@ export default function History() {
     const rows = filteredTransactions.map((tx) => [
       format(new Date(tx.block_timestamp), "yyyy-MM-dd HH:mm:ss"),
       tx.event_type,
-      tx.amount,
+      formatMneeAmount(tx.amount),
       tx.to_address,
       tx.from_address,
       tx.tx_hash,
@@ -140,6 +152,7 @@ export default function History() {
                   <SelectItem value="spend">Spend</SelectItem>
                   <SelectItem value="migration">Migration</SelectItem>
                   <SelectItem value="fund">Fund</SelectItem>
+                  <SelectItem value="withdraw">Withdraw</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -200,7 +213,7 @@ export default function History() {
                                 {eventType}
                               </Badge>
                               <span className="font-semibold">
-                                {parseFloat(tx.amount).toLocaleString()} MNEE
+                                {parseFloat(formatMneeAmount(tx.amount)).toLocaleString()} MNEE
                               </span>
                             </div>
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">

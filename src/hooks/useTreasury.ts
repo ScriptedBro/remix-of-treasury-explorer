@@ -1,9 +1,10 @@
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from "wagmi";
 import { POLICY_TREASURY_ABI } from "@/lib/contracts/abis";
-import { formatUnits } from "viem";
-import { useEffect, useMemo } from "react";
+import { decodeEventLog, formatUnits } from "viem";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { getTreasuryStatus, type TreasuryStatus } from "@/lib/treasury-status";
+import { useRecordTransaction, useTreasuryByAddress } from "@/hooks/useTreasuryDB";
 
 interface UseTreasuryProps {
   address: `0x${string}`;
@@ -14,6 +15,9 @@ interface UseTreasuryProps {
 
 export function useTreasury({ address, tokenDecimals = 18, hasTransactions = false, hasMigration = false }: UseTreasuryProps) {
   const publicClient = usePublicClient();
+  const [chainNow, setChainNow] = useState<number | null>(null);
+  const { data: treasuryDB } = useTreasuryByAddress(address);
+  const recordTransaction = useRecordTransaction();
   
   // Read treasury data
   const { data: balance, refetch: refetchBalance } = useReadContract({
@@ -64,23 +68,46 @@ export function useTreasury({ address, tokenDecimals = 18, hasTransactions = fal
     functionName: "spentThisPeriod",
   });
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchChainTime = async () => {
+      if (!publicClient) return;
+      try {
+        const block = await publicClient.getBlock();
+        if (cancelled) return;
+        setChainNow(Number(block.timestamp));
+      } catch {
+        // ignore; fallback to local time
+      }
+    };
+
+    fetchChainTime();
+
+    const id = setInterval(fetchChainTime, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [publicClient]);
+
   // Write functions
   const { 
-    writeContract: writeSpend, 
+    writeContractAsync: writeSpendAsync, 
     data: spendHash,
     isPending: isSpendPending,
     reset: resetSpend
   } = useWriteContract();
 
   const { 
-    writeContract: writeMigrate, 
+    writeContractAsync: writeMigrateAsync, 
     data: migrateHash,
     isPending: isMigratePending,
     reset: resetMigrate
   } = useWriteContract();
 
   const { 
-    writeContract: writeWithdrawAll, 
+    writeContractAsync: writeWithdrawAllAsync, 
     data: withdrawAllHash,
     isPending: isWithdrawAllPending,
     reset: resetWithdrawAll
@@ -127,31 +154,96 @@ export function useTreasury({ address, tokenDecimals = 18, hasTransactions = fal
     }
   }, [isWithdrawAllSuccess, refetchBalance, refetchSpent, resetWithdrawAll]);
 
+  useEffect(() => {
+    const recordWithdrawAll = async () => {
+      if (!isWithdrawAllSuccess || !withdrawAllHash) return;
+      if (!publicClient || !treasuryDB) return;
+
+      try {
+        const receipt = await publicClient.getTransactionReceipt({ hash: withdrawAllHash });
+        const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
+
+        const withdrawLog = receipt.logs.find((l) => {
+          try {
+            const decoded = decodeEventLog({
+              abi: POLICY_TREASURY_ABI,
+              data: l.data,
+              topics: l.topics,
+            });
+            return decoded.eventName === "WithdrawAll";
+          } catch {
+            return false;
+          }
+        });
+
+        if (!withdrawLog) return;
+
+        const decoded = decodeEventLog({
+          abi: POLICY_TREASURY_ABI,
+          data: withdrawLog.data,
+          topics: withdrawLog.topics,
+        });
+
+        const to = String((decoded.args as any).to) as `0x${string}`;
+        const operator = String((decoded.args as any).operator) as `0x${string}`;
+        const amount = (decoded.args as any).amount as bigint;
+
+        await recordTransaction.mutateAsync({
+          treasury_id: treasuryDB.id,
+          tx_hash: withdrawAllHash,
+          event_type: "withdraw",
+          from_address: address,
+          to_address: to,
+          amount: amount.toString(),
+          block_number: Number(receipt.blockNumber),
+          block_timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
+          log_index: Number(withdrawLog.logIndex ?? 0),
+        });
+      } catch (e) {
+        console.error("Failed to record withdrawAll transaction:", e);
+      }
+    };
+
+    recordWithdrawAll();
+  }, [address, isWithdrawAllSuccess, publicClient, recordTransaction, treasuryDB, withdrawAllHash]);
+
   // Functions
-  const spend = (to: `0x${string}`, amount: bigint) => {
-    writeSpend({
-      address,
-      abi: POLICY_TREASURY_ABI,
-      functionName: "spend",
-      args: [to, amount],
-    } as any);
+  const spend = async (to: `0x${string}`, amount: bigint) => {
+    try {
+      await writeSpendAsync({
+        address,
+        abi: POLICY_TREASURY_ABI,
+        functionName: "spend",
+        args: [to, amount],
+      } as any);
+    } catch (e) {
+      toast.error(String(e));
+    }
   };
 
-  const migrate = () => {
-    writeMigrate({
-      address,
-      abi: POLICY_TREASURY_ABI,
-      functionName: "migrate",
-    } as any);
+  const migrate = async () => {
+    try {
+      await writeMigrateAsync({
+        address,
+        abi: POLICY_TREASURY_ABI,
+        functionName: "migrate",
+      } as any);
+    } catch (e) {
+      toast.error(String(e));
+    }
   };
 
-  const withdrawAll = (to: `0x${string}`) => {
-    writeWithdrawAll({
-      address,
-      abi: POLICY_TREASURY_ABI,
-      functionName: "withdrawAll",
-      args: [to],
-    } as any);
+  const withdrawAll = async (to: `0x${string}`) => {
+    try {
+      await writeWithdrawAllAsync({
+        address,
+        abi: POLICY_TREASURY_ABI,
+        functionName: "withdrawAll",
+        args: [to],
+      } as any);
+    } catch (e) {
+      toast.error(String(e));
+    }
   };
 
   const checkWhitelist = async (addr: `0x${string}`): Promise<boolean> => {
@@ -192,8 +284,9 @@ export function useTreasury({ address, tokenDecimals = 18, hasTransactions = fal
       expiryTimestamp: expiryTimestamp ? Number(expiryTimestamp) : 0,
       hasTransactions,
       hasMigration,
+      now: chainNow ?? undefined,
     });
-  }, [balance, expiryTimestamp, hasTransactions, hasMigration]);
+  }, [balance, expiryTimestamp, hasTransactions, hasMigration, chainNow]);
 
   return {
     // Data
